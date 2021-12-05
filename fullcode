@@ -1,0 +1,30 @@
+import pandas as pd                                         # Integrated Development Environment
+import matplotlib.pyplot as plt                             # import Matplotlib (plotting library) 
+import seaborn as sns                                       # import Seaborn a Python data visualization library
+import time                                                 # import time
+import numpy as np                                          # import Numerical programming package 
+
+from sklearn.model_selection import train_test_split        # Import train_test_split function
+from sklearn import metrics                                 # Import scikit-learn metrics module for accuracy calculation
+from sklearn.linear_model import LogisticRegression         # Import LogisticRegression
+from sklearn.metrics import plot_confusion_matrix           # Import ConfusionMatrixDisplay
+import gensim                                               # Library for topic modelling, document indexing and similarity retrieval  
+import nltk                                                 # libraries for symbolic and statistical natural language processing (NLP) 
+from collections import Counter                             # Stores elements as dictionary keys
+from nltk import word_tokenize                              # A module breaks each word       
+from tqdm import tqdm                                       # Demonstrate counting the number of lines 
+
+from sklearn.metrics import ConfusionMatrixDisplay          # Import ConfusionMatrixDisplay
+from sklearn.tree import plot_tree                          # Import plot_tree
+from wordcloud import WordCloud                             # Word cloud generator  
+
+complaint = pd.read_csv(r'C:\Users\QuangDaoTran\Downloads\Financial_Complains_Model.csv', encoding="ISO-8859-1") 
+complaint.head(5)
+
+print(complaint.dtypes)
+rows, columns = complaint.shape
+print("Rows:", rows)
+print("Columns:", columns)
+
+## Text Cleansing
+
