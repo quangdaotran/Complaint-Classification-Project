@@ -1,24 +1,28 @@
-import pandas as pd                                         # Integrated Development Environment
-import matplotlib.pyplot as plt                             # import Matplotlib (plotting library) 
-import seaborn as sns                                       # import Seaborn a Python data visualization library
-import time                                                 # import time
-import numpy as np                                          # import Numerical programming package 
+import pandas as pd  # Integrated Development Environment
+import matplotlib.pyplot as plt  # import Matplotlib (plotting library)
+import seaborn as sns  # import Seaborn a Python data visualization library
+import time  # import time
+import math
+import numpy as np  # import Numerical programming package
 
-from sklearn.model_selection import train_test_split        # Import train_test_split function
-from sklearn import metrics                                 # Import scikit-learn metrics module for accuracy calculation
-from sklearn.linear_model import LogisticRegression         # Import LogisticRegression
-from sklearn.metrics import plot_confusion_matrix           # Import ConfusionMatrixDisplay
-import gensim                                               # Library for topic modelling, document indexing and similarity retrieval  
-import nltk                                                 # libraries for symbolic and statistical natural language processing (NLP) 
-from collections import Counter                             # Stores elements as dictionary keys
-from nltk import word_tokenize                              # A module breaks each word       
-from tqdm import tqdm                                       # Demonstrate counting the number of lines 
+from sklearn.model_selection import train_test_split  # Import train_test_split function
+from sklearn import metrics  # Import scikit-learn metrics module for accuracy calculation
+from sklearn.linear_model import LogisticRegression  # Import LogisticRegression
+from sklearn.metrics import plot_confusion_matrix  # Import ConfusionMatrixDisplay
+import gensim  # Library for topic modelling, document indexing and similarity retrieval
+import nltk  # libraries for symbolic and statistical natural language processing (NLP)
+from collections import Counter  # Stores elements as dictionary keys
+from nltk import word_tokenize  # A module breaks each word
+from tqdm import tqdm  # Demonstrate counting the number of lines
 
-from sklearn.metrics import ConfusionMatrixDisplay          # Import ConfusionMatrixDisplay
-from sklearn.tree import plot_tree                          # Import plot_tree
-from wordcloud import WordCloud                             # Word cloud generator  
+from sklearn.metrics import ConfusionMatrixDisplay  # Import ConfusionMatrixDisplay
+from sklearn.tree import plot_tree  # Import plot_tree
+from wordcloud import WordCloud  # Word cloud generator
+from sklearn.feature_extraction.text import TfidfVectorizer
+import csv
+import pickle
 
-complaint = pd.read_csv(r'C:\Users\QuangDaoTran\Downloads\Financial_Complains_Model.csv', encoding="ISO-8859-1") 
+complaint = pd.read_csv("D:/Learning/Python/Complaint Classification Project/dataset/Financial_Complains_Model.csv")
 complaint.head(5)
 
 print(complaint.dtypes)
@@ -26,5 +30,140 @@ rows, columns = complaint.shape
 print("Rows:", rows)
 print("Columns:", columns)
 
-## Text Cleansing
+# Text Cleansing
+
+complaint1 = complaint[["Issue", "Consumer complaint narrative"]]
+complaint1 = complaint1.dropna()
+
+print(complaint1.shape)
+print(complaint1.isnull().sum())
+
+complaint1.describe(include='all')
+
+counter = Counter(complaint1['Issue'].tolist())
+top_10_issues = {i[0]: idx for idx, i in enumerate(counter.most_common(10))}
+complaint1 = complaint1[complaint1['Issue'].map(lambda x: x in top_10_issues)]
+print(counter)
+# dataset is highly imbalanced
+
+descriptions = complaint1['Consumer complaint narrative'].tolist()
+labels = [top_10_issues[i] for i in complaint1['Issue'].tolist()]
+print(top_10_issues)
+
+# Above is the labels for classification problem
+
+description_w2v = [[item] for item in descriptions]  # Converting to list of lists
+print(description_w2v[0:2])
+
+# Word tokenization
+# nltk.download('punkt')
+
+word_tkn = nltk.word_tokenize
+description_tokens = []
+for i in range(len(description_w2v)):
+    description_tokens.append(word_tkn(description_w2v[i][0]))
+
+# Remove punctuation
+description_punctuation = []
+for i in range(len(description_tokens)):
+    description_punctuation.append([word for word in description_tokens[i] if word.isalnum()])
+
+# Lower case
+key2 = description_punctuation[:]
+
+for i in range(len(key2)):
+    for j in range(len(key2[i])):
+        key2[i][j] = key2[i][j].lower()
+
+# Remove stopwords
+# nltk.download('stopwords')
+stopword_list = nltk.corpus.stopwords.words('english')
+
+for i in range(len(key2)):
+    key2[i] = [token for token in key2[i] if token not in stopword_list]
+print(key2[0:2])
+
+# Remove the digits from strings
+for i in range(len(key2)):
+    key2[i] = [x for x in key2[i] if not (x.isdigit() or x[0] == '-' and x[1:].isdigit())]
+print(key2[0:2])
+
+key3 = []
+labels_2 = []
+for i in range(len(key2)):
+    if len(key2[i]) > 2:
+        key3.append(key2[i])
+        labels_2.append(labels[i])
+
+# After I do the word tokenization, I just continue with lower case, stopwords and punctuation removal. These steps
+# help to get rid of the unnecessary data, save more memories increase the running time of the classification
+# algorithms later. I do not do stemming, lemmatization and spell checking because these steps will took a lot of
+# time to run and it does not affect much the accuracy of the algorithms. However, because I skip spell checking,
+# some string-number values as '2018' exist and make it impossible to run the code for tf and idf step. Therefore,
+# I have to remove them.
+
+# TF (Term Frequency) When I try to create lists in a list and count for the words in each list (document),
+# my memory (RAM) run out because the bag of word is huge. So I only create a small subset of the original data and
+# perform the tf-idf. Afterwards, I proceed word2vec using the original dataset.
+key4 = key3[:500]
+BoW = key4[:0]
+for i in range(1, len(key4)):
+    BoW = set(BoW) | set(key4[i])
+print(len(BoW))
+
+Dicts = []
+for i in range(len(key4)):
+    A_Dict = dict.fromkeys(BoW, 0)
+    Dicts.append(A_Dict)
+print(len(Dicts))
+
+for i in range(len(Dicts)):
+    for token in (key4[i]):
+        Dicts[i][token] += 1
+
+
+def TF(dict_input, bow_input):  # when lowercase "TF", the next for-loop gets an TypeError: ‘dict’ object is not
+    # callable
+    # use [] instead of () for functions to get items of a dict
+    tfdict = {}
+    tfcount = len(bow_input)
+    for word, count in dict_input.items():
+        tfdict[word] = count / float(tfcount)
+    return tfdict
+
+
+tf0 = TF(Dicts[0], BoW)
+tf_dataframe = pd.DataFrame([tf0])
+for i in range(1, len(Dicts)):
+    tf = TF(Dicts[i], BoW)
+    tf_dataframe = tf_dataframe.append(tf, ignore_index=True)
+
+print(tf_dataframe)
+
+# Inverse data frequency (IDF)
+
+IDF_Dict = dict.fromkeys(BoW, 0)
+for word in BoW:
+    for i in range(len(Dicts)):
+        if (tf_dataframe.iloc[i][word]) > 0:
+            IDF_Dict[word] += 1
+    IDF_Dict[word] = math.log(float(len(Dicts) / IDF_Dict.get(word)))  # ???? error ????
+
+idf_dataframe = pd.DataFrame([IDF_Dict])
+print(idf_dataframe)
+
+print(len(key3))
+
+file_name = "key3.pkl"
+
+open_file = open(file_name, "wb")
+pickle.dump(key3, open_file)
+open_file.close()
+
+open_file = open(file_name, "rb")
+loaded_list = pickle.load(open_file)
+open_file.close()
+print(loaded_list[0])
+print(key3[0])
+
 
