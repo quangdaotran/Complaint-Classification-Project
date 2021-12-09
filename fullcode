@@ -1,26 +1,21 @@
-import pandas as pd  # Integrated Development Environment
-import matplotlib.pyplot as plt  # import Matplotlib (plotting library)
-import seaborn as sns  # import Seaborn a Python data visualization library
-import time  # import time
-import math
-import numpy as np  # import Numerical programming package
-
-from sklearn.model_selection import train_test_split  # Import train_test_split function
-from sklearn import metrics  # Import scikit-learn metrics module for accuracy calculation
-from sklearn.linear_model import LogisticRegression  # Import LogisticRegression
-from sklearn.metrics import plot_confusion_matrix  # Import ConfusionMatrixDisplay
-import gensim  # Library for topic modelling, document indexing and similarity retrieval
-import nltk  # libraries for symbolic and statistical natural language processing (NLP)
-from collections import Counter  # Stores elements as dictionary keys
-from nltk import word_tokenize  # A module breaks each word
-from tqdm import tqdm  # Demonstrate counting the number of lines
-
-from sklearn.metrics import ConfusionMatrixDisplay  # Import ConfusionMatrixDisplay
-from sklearn.tree import plot_tree  # Import plot_tree
-from wordcloud import WordCloud  # Word cloud generator
-from sklearn.feature_extraction.text import TfidfVectorizer
-import csv
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.tree import DecisionTreeClassifier
+from sklearn import model_selection
+from collections import Counter
+from sklearn import naive_bayes
+from sklearn import metrics
+from sklearn.svm import SVC
+from tqdm import tqdm
+import pandas as pd
+import numpy as np
+import gensim
 import pickle
+import math
+import nltk
 
 complaint = pd.read_csv("D:/Learning/Python/Complaint Classification Project/dataset/Financial_Complains_Model.csv")
 complaint.head(5)
@@ -155,15 +150,281 @@ print(idf_dataframe)
 print(len(key3))
 
 file_name = "key3.pkl"
-
 open_file = open(file_name, "wb")
 pickle.dump(key3, open_file)
 open_file.close()
 
-open_file = open(file_name, "rb")
-loaded_list = pickle.load(open_file)
+file_name_2 = "labels_2.pkl"
+open_file = open(file_name_2, "wb")
+pickle.dump(labels_2, open_file)
 open_file.close()
-print(loaded_list[0])
+
+# continue on the next day
+open_file = open("key3.pkl", "rb")
+key3 = pickle.load(open_file)
+open_file.close()
 print(key3[0])
 
+open_file = open("labels_2.pkl", "rb")
+labels_2 = pickle.load(open_file)
+open_file.close()
+print(labels_2[15])
 
+# run some codes written in the previous day again
+key4 = key3[:500]
+BoW = key4[:0]
+for i in range(1, len(key4)):
+    BoW = set(BoW) | set(key4[i])
+print(len(BoW))
+
+Dicts = []
+for i in range(len(key4)):
+    A_Dict = dict.fromkeys(BoW, 0)
+    Dicts.append(A_Dict)
+print(len(Dicts))
+
+for i in range(len(Dicts)):
+    for token in (key4[i]):
+        Dicts[i][token] += 1
+
+
+def TF(dict_input, bow_input):  # when lowercase "TF", the next for-loop gets an TypeError: ‘dict’ object is not
+    # callable
+    # use [] instead of () for functions to get items of a dict
+    tfdict = {}
+    tfcount = len(bow_input)
+    for word, count in dict_input.items():
+        tfdict[word] = count / float(tfcount)
+    return tfdict
+
+
+tf0 = TF(Dicts[0], BoW)
+tf_dataframe = pd.DataFrame([tf0])
+for i in range(1, len(Dicts)):
+    tf = TF(Dicts[i], BoW)
+    tf_dataframe = tf_dataframe.append(tf, ignore_index=True)
+
+IDF_Dict = dict.fromkeys(BoW, 0)
+for word in BoW:
+    for i in range(len(Dicts)):
+        if (tf_dataframe.iloc[i][word]) > 0:
+            IDF_Dict[word] += 1
+    IDF_Dict[word] = math.log(float(len(Dicts) / IDF_Dict.get(word)))  # ???? error ????
+idf_dataframe = pd.DataFrame([IDF_Dict])
+
+# TF-IDF combination
+tfidf_dataframe = tf_dataframe.copy()
+for word in BoW:
+    for i in range(len(Dicts)):
+        tfidf_dataframe.iloc[i][word] = tf_dataframe.iloc[i][word] * idf_dataframe.iloc[0][word]
+print(tfidf_dataframe.iloc[0:10, 0:20])
+
+# Word to vector
+train_x, test_x, train_y, test_y = train_test_split(key3, labels_2, test_size=0.3)
+size = 100  # each word is a vector
+complaint_model = gensim.models.Word2Vec(train_x, vector_size=size,
+                                         window=10, min_count=2, workers=7, sample=1e-5, epochs=10, sg=1)
+# When the vector_size decreases, the similarity among words increases but it is hard for me to differentiate between
+# words. The best size ranges from 50 to 300, and I want to keep the size at a fairly good number, so I choose
+# vector_size = 100. The bag of words is huge and I want to focus only on the key words, so I set the min_count to 2.
+# And the number of words in each document (complaints) is large, so I set window = 10.
+
+print(complaint_model.wv.vectors.shape)
+complaint_model.wv.most_similar('credit')
+
+missed_word = []
+word = 'jimmyruby1502'
+for review in tqdm(train_x):
+    for token in review:
+        if token not in complaint_model.wv:
+            if token != word:
+                word = token
+                missed_word.append(word)
+print(len(missed_word))  # complaint_model vocab missed a lot of words in train_x
+
+# Prepare the training set
+MeanVector = np.zeros([len(train_x), size])
+MinVector = np.zeros([len(train_x), size])
+MaxVector = np.zeros([len(train_x), size])
+MaxMinVector = np.zeros([len(train_x), 2 * size])
+
+review_counter = 0
+for review in tqdm(train_x):  # getting each review
+    Ip = len(review)
+    J = size
+    aux = np.zeros([Ip, J])
+    row = 0
+    for token in review:  # token means word
+        if token in complaint_model.wv:
+            v = complaint_model.wv.__getitem__([token])
+            for j in range(J):
+                aux[row, j] = v[0, j]
+            row += 1
+        else:
+            row += 1
+    mean = np.mean(aux[0:row - 1], axis=0)
+    maxim = np.max(aux[0:row - 1], axis=0)
+    minim = np.min(aux[0:row - 1], axis=0)
+    for j in range(J):
+        MeanVector[review_counter, j] = mean[j]
+        MaxVector[review_counter, j] = maxim[j]
+        MinVector[review_counter, j] = minim[j]
+        MaxMinVector[review_counter, j] = maxim[j]
+        MaxMinVector[review_counter, j + size] = minim[j]
+    review_counter += 1
+
+# Prepare the testing set
+MeanVectorTest = np.zeros([len(test_x), size])
+MinVectorTest = np.zeros([len(test_x), size])
+MaxVectorTest = np.zeros([len(test_x), size])
+MaxMinVectorTest = np.zeros([len(test_x), 2 * size])
+
+review_counter = 0
+for review in tqdm(test_x):  # getting each review
+    Ip = len(review)
+    J = size
+    aux = np.zeros([Ip, J])
+    row = 0
+    for token in review:
+        if token in complaint_model.wv:
+            v = complaint_model.wv.__getitem__([token])
+            for j in range(J):
+                aux[row, j] = v[0, j]
+            row += 1
+        else:
+            row += 1
+    mean = np.mean(aux[0:row - 1], axis=0)
+    maxim = np.max(aux[0:row - 1], axis=0)
+    minim = np.min(aux[0:row - 1], axis=0)
+    for j in range(J):
+        MeanVectorTest[review_counter, j] = mean[j]
+        MaxVectorTest[review_counter, j] = maxim[j]
+        MinVectorTest[review_counter, j] = minim[j]
+        MaxMinVectorTest[review_counter, j] = maxim[j]
+        MaxMinVectorTest[review_counter, j + size] = minim[j]
+    review_counter += 1
+
+# use MeanVector
+# Naives Bayes
+Train_accuracy = []
+Test_accuracy = []
+X = MeanVector
+T = MeanVectorTest
+
+NBayes = naive_bayes.GaussianNB()
+NBayes.fit(X, train_y)
+y_pred_Train = NBayes.predict(X)
+NBayes.fit(T, test_y)
+y_pred_Test = NBayes.predict(T)
+
+Train_accuracy.append(metrics.accuracy_score(train_y, y_pred_Train))
+Test_accuracy.append(metrics.accuracy_score(test_y, y_pred_Test))
+print('Naives Bayes Train Accuracy: ', metrics.accuracy_score(train_y, y_pred_Train))
+print('Logistic regression Test Accuracy: ', metrics.accuracy_score(test_y, y_pred_Test))
+
+# Logistic Regression
+MultinomialReg = LogisticRegression(solver='lbfgs', max_iter=10000, multi_class='multinomial')
+MultinomialReg.fit(X, train_y)
+y_pred_Train = MultinomialReg.predict(X)
+MultinomialReg.fit(T, test_y)
+y_pred_Test = MultinomialReg.predict(T)
+
+Train_accuracy.append(metrics.accuracy_score(train_y, y_pred_Train))
+Test_accuracy.append(metrics.accuracy_score(test_y, y_pred_Test))
+print('Logistic regression Train Accuracy: ', metrics.accuracy_score(train_y, y_pred_Train))
+print('Logistic regression Test Accuracy: ', metrics.accuracy_score(test_y, y_pred_Test))
+
+# Decision Trees
+Tree_train_accuracy = []
+Tree_test_accuracy = []
+max_depth = []
+j = 1
+
+while j <= 20:
+    max_depth.append(j)
+    dtree = DecisionTreeClassifier(criterion='entropy', max_depth=j)
+    dtree.fit(X, train_y)
+    y_pred_Train = dtree.predict(X)
+    y_pred_Test = dtree.predict(T)
+
+    Tree_train_accuracy.append(metrics.accuracy_score(train_y, y_pred_Train))
+    Tree_test_accuracy.append(metrics.accuracy_score(test_y, y_pred_Test))
+    j += 1
+
+Tree_result = {'max depth': max_depth, 'train accuracy': Tree_train_accuracy, 'test accuracy': Tree_test_accuracy}
+Tree_result_table = pd.DataFrame(data=Tree_result)
+print(Tree_result_table)
+
+# set max_depth > 20
+dtree = DecisionTreeClassifier(criterion='entropy', max_depth=25)
+dtree.fit(X, train_y)
+y_pred_Train = dtree.predict(X)
+y_pred_Test = dtree.predict(T)
+
+Train_accuracy.append(metrics.accuracy_score(train_y, y_pred_Train))
+Test_accuracy.append(metrics.accuracy_score(test_y, y_pred_Test))
+print('Tree Train Accuracy: ', metrics.accuracy_score(train_y, y_pred_Train))
+print('Tree Test Accuracy: ', metrics.accuracy_score(test_y, y_pred_Test))
+
+# Random Forest:
+dForest = RandomForestClassifier(criterion='entropy', max_features='log2', max_depth=25)
+dForest.fit(X, train_y)
+y_pred_Train = dForest.predict(X)
+y_pred_Test = dForest.predict(T)
+
+Train_accuracy.append(metrics.accuracy_score(train_y, y_pred_Train))
+Test_accuracy.append(metrics.accuracy_score(test_y, y_pred_Test))
+print('Forest Train Accuracy: ', metrics.accuracy_score(train_y, y_pred_Train))
+print('Forest Test Accuracy: ', metrics.accuracy_score(test_y, y_pred_Test))
+
+# Random Forest is the best model
+
+# create a dataframe of result
+Method = ['Naives Bayes', 'Logistic Regression', 'Decision Trees', 'Random Forest']
+print(Train_accuracy)
+result_dict = {'Method': Method, 'Train Accuracy': Train_accuracy, 'Test Accuracy': Test_accuracy}
+Result = pd.DataFrame(result_dict)  # an easy way to create a dataframe using a dict
+print(Result)
+Result.to_csv('Result.csv', index=False, encoding='utf-8')
+
+# create a confusion matrix
+classes = list(top_10_issues.values())
+cm = metrics.confusion_matrix(test_y, y_pred_Test, labels=classes)
+figure = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
+figure.plot()
+figure.ax_.set_title('Random Forest Testing Accuracy: ' + str(round(Result.iloc[3, 2], 2)))
+
+# save the best model
+filename = 'finalized_model.sav'
+pickle.dump(dForest, open(filename, 'wb'))
+
+# save the word2vec model
+filename = 'complaint_w2c.sav'
+pickle.dump(complaint_model, open(filename, 'wb'))
+
+# KNN
+# never finished
+# choose n_neigbors = 10, 1, 15
+X = MaxMinVector
+T = MaxMinVectorTest
+KNN = KNeighborsClassifier(n_neighbors=10)
+KNN.fit(X, train_y)
+y_pred_Train = KNN.predict(X)
+y_pred_Test = KNN.predict(T)
+
+Train_accuracy.append(metrics.accuracy_score(train_y, y_pred_Train))
+Test_accuracy.append(metrics.accuracy_score(test_y, y_pred_Test))
+print('KNN Train Accuracy :', metrics.accuracy_score(train_y, y_pred_Train))
+print('KNN Test Accuracy: ', metrics.accuracy_score(test_y, y_pred_Test))
+
+# Support Vector Machine
+# never finished
+SVector = SVC(kernel='rbf')
+SVector.fit(X, train_y)
+y_pred_Train = SVector.predict(X)
+y_pred_Test = SVector.predict(T)
+
+Train_accuracy.append(metrics.accuracy_score(train_y, y_pred_Train))
+Test_accuracy.append(metrics.accuracy_score(test_y, y_pred_Test))
+print('SVector Train Accuracy: ', metrics.accuracy_score(train_y, y_pred_Train))
+print('SVector Test Accuracy: ', metrics.accuracy_score(test_y, y_pred_Test))
